@@ -17,7 +17,16 @@
 
 ## 🎯 **Enterprise Overview**
 
-The **Jaseci Learning Companion** is a **next-generation, enterprise-grade, production-ready multi-agent system (MAS)** that revolutionizes how developers learn and master the Jaseci programming language. This isn't just another learning platform—it's a sophisticated AI-powered ecosystem that combines multi-agent orchestration, real-time analytics, Code Context Graph (CCG) analysis, and comprehensive quality assessment.
+The **Jaseci Learning Companion** is a **next-generation, enterprise-grade, production-ready multi-agent system (MAS)** that revolutionizes how developers learn and master the Jaseci programming language. This isn't just another learning platform—it's a sophisticated AI-powered ecosystem that combines multi-agent orchestration, real-time analytics, Code Context Graph (CCG) analysis, Object-Subject-Predicate (OSP) graph visualization, and comprehensive quality assessment.
+
+### **🚀 Latest Enhancement: Phase 4 - OSP Graph Implementation**
+- **🕸️ Advanced Graph Visualization**: Interactive D3.js-powered OSP graphs with multiple layouts
+- **📊 Code Structure Analysis**: AST-based extraction of code relationships and dependencies
+- **🔍 Design Pattern Detection**: Automated identification of Factory, Observer, MVC, Singleton patterns
+- **⚠️ Anti-pattern Detection**: Code smell identification with severity classification
+- **📈 20+ Complexity Metrics**: Cyclomatic, cognitive, maintainability, and topology analysis
+- **⚡ Real-time Graph Updates**: WebSocket-powered live code analysis and visualization
+- **🗄️ Neo4j Integration**: Graph database for scalable OSP structure storage and querying
 
 ### 🏆 **Why This Is Enterprise-Grade**
 
@@ -75,7 +84,8 @@ graph TB
     subgraph "⚙️ Specialized Services"
         CCG[🔬 Code Context Graph Service]
         LLM[🧠 byLLM Integration Service]
-        OSP[🕸️ OSP Graph Database]
+        OSP_SERVICE[🕸️ OSP Graph Service]
+        OSP_DB[(🗄️ Neo4j Graph DB)]
         METRICS[📊 Metrics Collection]
         NOTIFICATION[🔔 Notification Service]
     end
@@ -125,12 +135,12 @@ graph TB
     QGA --> LLM
     CAA --> CCG
     QAE --> METRICS
-    CRA --> OSP
+    CRA --> OSP_SERVICE
     RAA --> ELASTIC
     
     CCG --> POSTGRES
     LLM --> REDIS
-    OSP --> NEO4J
+    OSP_SERVICE --> OSP_DB
     METRICS --> ELASTIC
     
     K8S --> MONITORING
@@ -366,7 +376,12 @@ spec:
 │   │   ├── 📁 api_gateway/         # 🚪 FastAPI gateway & routing
 │   │   ├── 📁 auth_service/        # 🔐 Enterprise authentication
 │   │   ├── 📁 user_management/     # 👥 User lifecycle management
-│   │   └── 📁 notification_service/ # 🔔 Real-time notifications
+│   │   ├── 📁 notification_service/ # 🔔 Real-time notifications
+│   │   └── 📁 osp_graph_service/    # 🕸️ OSP Graph Service (NEW)
+│   │       ├── 📁 database/           # Neo4j integration & graph operations
+│   │       ├── 📁 jaseci_parser/      # AST parsing & OSP structure generation
+│   │       ├── 📁 graph_analytics/    # Complexity metrics & pattern detection
+│   │       └── 📁 utils/              # Logging & utilities
 │   └── 📁 data/                    # 💾 Data Management
 │       ├── 📁 postgres/           # 🐘 Database schemas & migrations
 │       ├── 📁 redis/              # ⚡ Caching & session management
@@ -375,6 +390,10 @@ spec:
 ├── 📁 frontend/web-dashboard/       # 🌐 React Enterprise Frontend
 │   ├── 📁 src/                    # 💻 React application source
 │   │   ├── 📁 components/         # 🧩 Reusable UI components
+│   │   │   ├── 📁 osp/            # 🕸️ OSP Graph Components (NEW)
+│   │   │   │   ├── OSPGraphVisualization.tsx    # Interactive D3.js graphs
+│   │   │   │   ├── OSPCodeAnalysisWidget.tsx    # Code analysis with Monaco
+│   │   │   │   └── OSPGraphWidget.tsx           # Dashboard widget
 │   │   ├── 📁 contexts/           # 🔄 React context providers
 │   │   ├── 📁 hooks/              # ⚡ Custom React hooks
 │   │   ├── 📁 services/           # 🌐 API integration services
