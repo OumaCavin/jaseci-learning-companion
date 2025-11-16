@@ -23,6 +23,7 @@ import {
   TrendingUp as TrendingUpIcon,
   Psychology as PsychologyIcon,
   Analytics as AnalyticsIcon,
+  Timeline as TimelineIcon,
 } from '@mui/icons-material'
 import { useAuth } from '@/contexts/AuthContext'
 import { useWebSocket } from '@/contexts/WebSocketContext'
@@ -36,6 +37,7 @@ import { CodeAnalysisWidget } from '@/components/agents/CodeAnalysisWidget'
 import { QualityAssessmentWidget } from '@/components/agents/QualityAssessmentWidget'
 import { ContentRecommendationWidget } from '@/components/agents/ContentRecommendationWidget'
 import { AnalyticsWidget } from '@/components/agents/AnalyticsWidget'
+import OSPGraphWidget from '@/components/osp/OSPGraphWidget'
 import { Link } from 'next/link'
 
 export default function DashboardPage() {
@@ -116,6 +118,14 @@ export default function DashboardPage() {
       color: '#ef4444',
       widget: AnalyticsWidget,
       path: '/agents/analytics',
+    },
+    {
+      title: 'OSP Graph',
+      description: 'Interactive code analysis and graph visualization',
+      icon: TimelineIcon,
+      color: '#8b5cf6',
+      widget: OSPGraphWidget,
+      path: '/dashboard/osp-graph',
     },
   ]
 
