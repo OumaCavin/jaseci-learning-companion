@@ -1,0 +1,98 @@
+[user]
+    name = OumaCavin
+    email = cavin.otieno012@gmail.com
+
+[core]
+    editor = code --wait
+    autocrlf = input
+    safecrlf = true
+
+[init]
+    defaultBranch = main
+
+[branch]
+    autosetupmerge = always
+
+[push]
+    default = simple
+    followTags = true
+
+[pull]
+    rebase = false
+
+[merge]
+    conflictstyle = merge
+    log = true
+
+[tag]
+    sort = version:refname
+
+[status]
+    showUntrackedFiles = all
+
+[color]
+    ui = auto
+    status = auto
+    branch = auto
+    diff = auto
+    interactive = auto
+
+[color "branch"]
+    current = green bold
+    local = green
+    remote = yellow
+
+[color "diff"]
+    meta = yellow bold
+    frag = magenta bold
+    old = red bold
+    new = green bold
+
+[color "status"]
+    added = green bold
+    changed = yellow bold
+    untracked = red
+
+[log]
+    date = iso
+
+[format]
+    pretty = "%C(yellow)%h%Creset %s %C(dim yellow)(%cr) %C(bold blue)<%an>%Creset"
+
+[credential]
+    helper = store
+
+[http]
+    postBuffer = 524288000
+    lowSpeedLimit = 0
+    lowSpeedTime = 999999
+
+[https]
+    postBuffer = 524288000
+    lowSpeedLimit = 0
+    lowSpeedTime = 999999
+
+[alias]
+    st = status
+    co = checkout
+    br = branch
+    ci = commit
+    unstage = reset HEAD --
+    last = log -1 HEAD
+    visual = !gitk --all
+
+[filter "lfs"]
+    clean = git-lfs clean -- %f
+    smudge = git-lfs smudge -- %f
+    process = git-lfs filter-process
+    required = true
+
+[diff]
+    tool = vscode
+    algorithm = patience
+
+[difftool "vscode"]
+    cmd = code --wait --diff $LOCAL $REMOTE
+
+[mergetool "vscode"]
+    cmd = code --wait --merge $REMOTE $LOCAL $BASE $MERGED

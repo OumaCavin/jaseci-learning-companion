@@ -1,0 +1,111 @@
+# Multi-stage Dockerfile for Jaseci Learning Companion API Gateway
+# Stage 1: Base Environment
+FROM python:3.11-slim AS base
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    curl \
+    postgresql-client \
+    redis-tools \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Stage 2: Dependencies Installation
+FROM base AS dependencies
+
+# Create app directory and user
+WORKDIR /app
+RUN groupadd -r jaseci && useradd -r -g jaseci jaseci
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Stage 3: Development Environment
+FROM dependencies AS development
+
+# Switch to app directory
+WORKDIR /app
+
+# Copy source code
+COPY . .
+
+# Change ownership to jaseci user
+RUN chown -R jaseci:jaseci /app
+
+# Switch to jaseci user
+USER jaseci
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Start development server
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+# Stage 4: Production Build
+FROM dependencies AS build
+
+# Install additional build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy source code
+COPY . .
+
+# Build the application
+RUN python -m pip install --no-cache-dir -e .
+
+# Stage 5: Production Environment
+FROM base AS production
+
+# Create app directory and user
+WORKDIR /app
+RUN groupadd -r jaseci && useradd -r -g jaseci jaseci
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy installed packages from dependencies stage
+COPY --from=dependencies /usr/local/lib/python3.11/site-packages/ /usr/local/lib/python3.11/site-packages/
+COPY --from=dependencies /usr/local/bin/ /usr/local/bin/
+
+# Copy application code
+COPY --from=build --chown=jaseci:jaseci /app /app
+
+# Create logs directory
+RUN mkdir -p /app/logs && chown -R jaseci:jaseci /app/logs
+
+# Create non-root user for security
+USER jaseci
+
+# Expose port
+EXPOSE 8000
+
+# Environment variables for production
+ENV ENVIRONMENT=production \
+    DEBUG=false \
+    LOG_LEVEL=INFO
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Start production server with gunicorn
+CMD ["gunicorn", "main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--timeout", "120", "--keep-alive", "5"]

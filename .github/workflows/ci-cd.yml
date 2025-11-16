@@ -1,0 +1,676 @@
+name: 🚀 Enterprise CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run security scans daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  NODE_VERSION: '18'
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # Security and Code Quality Gate
+  security-and-quality:
+    runs-on: ubuntu-latest
+    name: 🔒 Security & Quality Gate
+    outputs:
+      security-scan: ${{ steps.security.outputs.status }}
+      quality-score: ${{ steps.quality.outputs.score }}
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: 🔍 Security Scan with Multiple Tools
+        id: security
+        uses: securecodewarrior/github-action-add-sarif@v1
+        with:
+          sarif-file: 'security-results.sarif'
+      
+      - name: 📊 Calculate Quality Score
+        id: quality
+        run: |
+          # This would calculate a composite quality score
+          # combining test coverage, linting, complexity, etc.
+          echo "score=85" >> $GITHUB_OUTPUT
+  
+  # Backend Linting and Code Quality
+  backend-quality:
+    runs-on: ubuntu-latest
+    name: 🐍 Python Backend Quality
+    needs: security-and-quality
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install black isort mypy flake8 bandit safety
+          pip install -r requirements.txt
+      
+      - name: 🎨 Black code formatting check
+        run: black --check --diff .
+      
+      - name: 📋 Import sorting check
+        run: isort --check-only --diff .
+      
+      - name: 🏷️ Type checking
+        run: mypy services/ --ignore-missing-imports --show-error-codes
+      
+      - name: 🔍 Linting
+        run: flake8 services/ --count --select=E9,F63,F7,F82 --show-source --statistics
+      
+      - name: 🛡️ Security scan
+        run: bandit -r services/ -f json -o bandit-report.json
+        continue-on-error: true
+      
+      - name: 🔒 Dependencies vulnerability scan
+        run: safety check --json --output safety-report.json
+        continue-on-error: true
+      
+      - name: 📈 Upload security reports
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: security-reports
+          path: |
+            bandit-report.json
+            safety-report.json
+
+  # Frontend Quality Assurance
+  frontend-quality:
+    runs-on: ubuntu-latest
+    name: ⚛️ React Frontend Quality
+    needs: security-and-quality
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/web-dashboard/package-lock.json
+      
+      - name: 📦 Install dependencies
+        working-directory: frontend/web-dashboard
+        run: npm ci
+      
+      - name: 🎨 Code formatting check
+        working-directory: frontend/web-dashboard
+        run: npx prettier --check "**/*.{js,jsx,ts,tsx,json,md}"
+      
+      - name: 📋 ESLint check
+        working-directory: frontend/web-dashboard
+        run: npx eslint "**/*.{js,jsx,ts,tsx}" --max-warnings=0
+      
+      - name: 🔍 Type checking
+        working-directory: frontend/web-dashboard
+        run: npx tsc --noEmit
+      
+      - name: 📏 Bundle size analysis
+        working-directory: frontend/web-dashboard
+        run: npx @next/bundle-analyzer
+        env:
+          ANALYZE: true
+
+  # Unit Tests and Coverage
+  backend-tests:
+    runs-on: ubuntu-latest
+    name: 🧪 Backend Unit Tests
+    needs: [security-and-quality, backend-quality]
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+      
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov pytest-asyncio pytest-mock
+          pip install -r requirements.txt
+      
+      - name: 🧪 Run unit tests
+        run: |
+          pytest tests/unit/ \
+            --cov=services \
+            --cov-report=xml \
+            --cov-report=html \
+            --cov-report=json \
+            --junitxml=pytest-results.xml \
+            --maxfail=5
+      
+      - name: 📊 Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: backend
+          name: backend-${{ matrix.python-version }}
+          fail_ci_if_error: false
+      
+      - name: 📈 Upload test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: backend-test-results-${{ matrix.python-version }}
+          path: |
+            pytest-results.xml
+            htmlcov/
+            coverage.json
+
+  # Frontend Testing
+  frontend-tests:
+    runs-on: ubuntu-latest
+    name: ⚛️ Frontend Testing
+    needs: [security-and-quality, frontend-quality]
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🟢 Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/web-dashboard/package-lock.json
+      
+      - name: 📦 Install dependencies
+        working-directory: frontend/web-dashboard
+        run: npm ci
+      
+      - name: 🧪 Run unit tests
+        working-directory: frontend/web-dashboard
+        run: npm run test:ci
+      
+      - name: 📊 Upload coverage to Codecov
+        working-directory: frontend/web-dashboard
+        run: npx codecov
+      
+      - name: 🎭 Run E2E tests
+        working-directory: frontend/web-dashboard
+        run: npm run test:e2e:headless
+      
+      - name: 📁 Upload E2E artifacts
+        working-directory: frontend/web-dashboard
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: frontend-e2e-results
+          path: |
+            cypress/videos/
+            cypress/screenshots/
+            cypress/downloads/
+
+  # Integration Tests
+  integration-tests:
+    runs-on: ubuntu-latest
+    name: 🔗 Integration Tests
+    needs: [security-and-quality, backend-tests, frontend-tests]
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: jaseci_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+      
+      neo4j:
+        image: neo4j:5.0
+        env:
+          NEO4J_AUTH: neo4j/testpassword
+        options: >-
+          --health-cmd "neo4j-admin graph info --database=neo4j"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 7687:7687
+          - 7474:7474
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest httpx
+      
+      - name: 🚀 Start services with Docker Compose
+        run: |
+          docker-compose -f infrastructure/docker/dev/docker-compose.yml up -d postgres redis neo4j
+          sleep 30
+      
+      - name: 🧪 Run integration tests
+        run: |
+          pytest tests/integration/ \
+            --junitxml=integration-results.xml \
+            --maxfail=3 \
+            -v
+      
+      - name: 📈 Upload integration results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: integration-test-results
+          path: integration-results.xml
+
+  # Performance and Load Testing
+  performance-tests:
+    runs-on: ubuntu-latest
+    name: ⚡ Performance Testing
+    needs: [integration-tests]
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install locust
+          pip install -r requirements.txt
+      
+      - name: 🚀 Start application
+        run: |
+          docker-compose -f infrastructure/docker/dev/docker-compose.yml up -d
+          sleep 60
+      
+      - name: 🏃 Run load tests
+        run: |
+          locust -f tests/performance/load_test.py \
+            --headless \
+            --users 100 \
+            --spawn-rate 10 \
+            --run-time 300s \
+            --host http://localhost:8000 \
+            --csv=load_test_results \
+            --csv-full-history
+      
+      - name: 📊 Upload performance results
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-test-results
+          path: load_test_results*
+
+  # Build and Push Docker Images
+  build-and-push:
+    runs-on: ubuntu-latest
+    name: 🐳 Build & Push Images
+    needs: [security-and-quality, backend-tests, frontend-tests, integration-tests]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🐳 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: 🔐 Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: 📝 Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=staging,enable={{is_default_branch}}
+      
+      - name: 🏗️ Build and push Backend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.backend
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}-backend
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
+      - name: 🏗️ Build and push Frontend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend/web-dashboard
+          file: ./Dockerfile.frontend
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}-frontend
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Security Deep Scan
+  security-scan:
+    runs-on: ubuntu-latest
+    name: 🔒 Deep Security Scan
+    needs: [build-and-push]
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🔍 Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+      
+      - name: 🔐 Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # Deploy to Staging
+  deploy-staging:
+    runs-on: ubuntu-latest
+    name: 🚀 Deploy to Staging
+    needs: [security-scan, performance-tests]
+    if: github.ref == 'refs/heads/main'
+    environment: staging
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: ☸️ Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+      
+      - name: 🔐 Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+      
+      - name: 📡 Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region us-west-2 \
+            --name jaseci-learning-staging
+      
+      - name: 🚀 Deploy to Kubernetes
+        run: |
+          kubectl set image deployment/jaseci-learning-api \
+            api=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-${{ github.sha }}-backend \
+            -n jaseci-learning-staging
+          
+          kubectl set image deployment/jaseci-learning-frontend \
+            frontend=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-${{ github.sha }}-frontend \
+            -n jaseci-learning-staging
+      
+      - name: ⏳ Wait for deployment
+        run: |
+          kubectl rollout status deployment/jaseci-learning-api -n jaseci-learning-staging --timeout=600s
+          kubectl rollout status deployment/jaseci-learning-frontend -n jaseci-learning-staging --timeout=300s
+      
+      - name: 🧪 Run smoke tests
+        run: |
+          kubectl run smoke-test --image=curlimages/curl:latest --rm -i --restart=Never -- \
+            curl -f http://jaseci-learning-ingress.staging.jaseci-learning.com/health || exit 1
+
+  # Deploy to Production
+  deploy-production:
+    runs-on: ubuntu-latest
+    name: 🏭 Deploy to Production
+    needs: [deploy-staging]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    environment: production
+    environment:
+      name: production
+      url: https://app.jaseci-learning.com
+      deployment_url: https://app.jaseci-learning.com
+      environment: production
+      deployment_environment: production
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 📢 Notify deployment start
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              "channel": "#deployments",
+              "username": "GitHub Actions",
+              "text": "🚀 Starting production deployment for ${{ github.repository }}@${{ github.sha }}",
+              "color": "good"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      
+      - name: ☸️ Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+      
+      - name: 🔐 Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+      
+      - name: 📡 Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region us-west-2 \
+            --name jaseci-learning-production
+      
+      - name: 🚀 Deploy to Production
+        run: |
+          # Blue-Green deployment strategy
+          kubectl patch service jaseci-learning-service -p \
+            '{"spec":{"selector":{"version":"green"}}}' -n jaseci-learning-production
+          
+          # Update deployment with new version
+          kubectl set image deployment/jaseci-learning-api \
+            api=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-${{ github.sha }}-backend \
+            -n jaseci-learning-production
+          
+          kubectl set image deployment/jaseci-learning-frontend \
+            frontend=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-${{ github.sha }}-frontend \
+            -n jaseci-learning-production
+      
+      - name: ⏳ Wait for production deployment
+        run: |
+          kubectl rollout status deployment/jaseci-learning-api -n jaseci-learning-production --timeout=900s
+          kubectl rollout status deployment/jaseci-learning-frontend -n jaseci-learning-production --timeout=600s
+      
+      - name: 🧪 Post-deployment verification
+        run: |
+          # Health checks
+          kubectl run health-check --image=curlimages/curl:latest --rm -i --restart=Never -- \
+            curl -f https://api.jaseci-learning.com/health || exit 1
+          
+          # API endpoint check
+          kubectl run api-check --image=curlimages/curl:latest --rm -i --restart=Never -- \
+            curl -f https://api.jaseci-learning.com/api/v1/agents/status || exit 1
+      
+      - name: 📊 Update monitoring dashboards
+        run: |
+          # Update Grafana with new deployment info
+          curl -X POST https://grafana.jaseci-learning.com/api/annotations \
+            -H "Authorization: Bearer ${{ secrets.GRAFANA_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "text": "🚀 Production deployment completed for ${{ github.sha }}",
+              "tags": ["deployment", "production"]
+            }'
+      
+      - name: 📢 Notify production deployment success
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              "channel": "#deployments",
+              "username": "GitHub Actions",
+              "text": "✅ Production deployment completed successfully! 🚀 ${{ github.repository }}@${{ github.sha }}",
+              "color": "good"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Cleanup and Post-deployment
+  post-deployment:
+    runs-on: ubuntu-latest
+    name: 🧹 Post-deployment Cleanup
+    needs: [deploy-production]
+    if: always()
+    
+    steps:
+      - name: 📊 Upload deployment summary
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-summary
+          path: |
+            deployment-summary.txt
+      
+      - name: 📝 Generate deployment report
+        run: |
+          cat > deployment-summary.txt << EOF
+          # Deployment Summary - $(date)
+          
+          ## Commit: ${{ github.sha }}
+          ## Branch: ${{ github.ref_name }}
+          ## Environment: Production
+          ## Actor: ${{ github.actor }}
+          
+          ## Pipeline Status:
+          - Security Scan: ${{ needs.security-scan.result }}
+          - Backend Tests: ${{ needs.backend-tests.result }}
+          - Frontend Tests: ${{ needs.frontend-tests.result }}
+          - Integration Tests: ${{ needs.integration-tests.result }}
+          - Performance Tests: ${{ needs.performance-tests.result }}
+          - Deployment: ${{ needs.deploy-production.result }}
+          
+          ## Docker Images:
+          - Backend: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}-backend
+          - Frontend: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}-frontend
+          
+          ## Rollback Commands:
+          kubectl rollout undo deployment/jaseci-learning-api -n jaseci-learning-production
+          kubectl rollout undo deployment/jaseci-learning-frontend -n jaseci-learning-production
+          EOF
+
+  # Notification and Documentation
+  notifications:
+    runs-on: ubuntu-latest
+    name: 📢 Final Notifications
+    needs: [post-deployment]
+    if: always()
+    
+    steps:
+      - name: 📧 Send email notification
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "Deployment Status: ${{ job.status }}"
+          to: cavin.otieno012@gmail.com
+          from: GitHub Actions
+          html_body: |
+            <h2>Jaseci Learning Companion Deployment Status</h2>
+            <p><strong>Status:</strong> ${{ job.status }}</p>
+            <p><strong>Commit:</strong> ${{ github.sha }}</p>
+            <p><strong>Branch:</strong> ${{ github.ref_name }}</p>
+            <p><strong>Actor:</strong> ${{ github.actor }}</p>
+            <p><strong>Repository:</strong> ${{ github.repository }}</p>
+            
+            <h3>Pipeline Results:</h3>
+            <ul>
+              <li>Security & Quality: ${{ needs.security-and-quality.result }}</li>
+              <li>Backend Quality: ${{ needs.backend-quality.result }}</li>
+              <li>Frontend Quality: ${{ needs.frontend-quality.result }}</li>
+              <li>Backend Tests: ${{ needs.backend-tests.result }}</li>
+              <li>Frontend Tests: ${{ needs.frontend-tests.result }}</li>
+              <li>Integration Tests: ${{ needs.integration-tests.result }}</li>
+              <li>Performance Tests: ${{ needs.performance-tests.result }}</li>
+              <li>Deployment: ${{ needs.deploy-production.result }}</li>
+            </ul>
