@@ -4,6 +4,9 @@ const nextConfig = {
   env: {
     CUSTOM_KEY: process.env.CUSTOM_KEY,
     API_BASE_URL: process.env.API_BASE_URL || 'http://localhost:8000',
+    WEBSOCKET_URL: process.env.WEBSOCKET_URL || 'ws://localhost:8001',
+    NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000',
+    NEXT_PUBLIC_WEBSOCKET_URL: process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'ws://localhost:8001',
   },
 
   // Experimental features
